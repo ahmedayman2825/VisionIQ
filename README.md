@@ -2,9 +2,9 @@
 
 # 👁️ VisionIQ
 
-### Real-time Face Age & Gender Estimation
+### Real-time Face Age, Gender & Emotion Estimation
 
-Detects faces in images or video and predicts **age bracket** and **gender** using a lightweight CNN built on MobileNetV3-Small, paired with a YOLOv8x face detector.
+Detects faces in images or video and predicts **age bracket**, **gender**, and **emotion** using a YOLOv8x face detector paired with a custom MobileNetV3-Small age/gender classifier and a pretrained emotion model.
 
 ![Python](https://img.shields.io/badge/Python-3.10+-3776AB?style=for-the-badge&logo=python&logoColor=white)
 ![PyTorch](https://img.shields.io/badge/PyTorch-EE4C2C?style=for-the-badge&logo=pytorch&logoColor=white)
@@ -22,29 +22,31 @@ Detects faces in images or video and predicts **age bracket** and **gender** usi
 
 ## 📌 Overview
 
-VisionIQ is a two-stage computer vision pipeline for real-time face analysis:
+VisionIQ is a real-time face analysis pipeline with three stages:
 
-1. A **YOLOv8x** face detector (`yolov8x_person_face.pt`) locates faces in a frame.
-2. Each detected face is cropped and passed to a custom **dual-head classifier** (MobileNetV3-Small backbone) that predicts:
-   - **Age bracket** — 9 classes
-   - **Gender** — Male / Female
-
-The classifier is trained on the **[FairFace dataset](https://www.kaggle.com/datasets/aibloy/fairface)**, a face dataset balanced across race, gender, and age for fairer predictions.
+1. **`FaceDetector`** (YOLOv8x, `yolov8x_person_face.pt`) locates faces in a frame.
+2. **`AgeGenderPredictor`** — a custom dual-head classifier (MobileNetV3-Small backbone) trained on **[FairFace](https://www.kaggle.com/datasets/aibloy/fairface)** — predicts age bracket and gender from each face crop.
+3. **`EmotionPredictor`** — a pretrained EfficientNet-B0 model (8-class, trained on AFEW) — predicts the emotion expressed on each face.
 
 ```
-Frame → YOLOv8x (face detection) → Crop face → Grayscale + Resize (224×224)
-      → VisionIQ model → { age bracket, gender } → Draw label on frame
+Frame → YOLOv8x (face detection) → Crop face
+      → AgeGenderPredictor → { age bracket, gender }
+      → EmotionPredictor   → { emotion, confidence }
+      → Draw all labels on frame
 ```
+
+`main.py` wires all three together into a live webcam demo.
 
 ---
 
 ## ✨ Features
 
 - 🎯 Real-time face detection using YOLOv8x
-- 🧑‍🦱 Joint age-bracket + gender prediction from a single lightweight model
-- 🎥 Live webcam demo with on-screen bounding boxes and labels
-- 🪶 Lightweight backbone (MobileNetV3-Small) — runs on CPU or GPU
-- 🔬 Trained on FairFace for more balanced predictions across demographics
+- 🧑‍🦱 Age-bracket + gender prediction from a custom lightweight model
+- 😀 Emotion recognition (8 classes: Anger, Contempt, Disgust, Fear, Happiness, Neutral, Sadness, Surprise)
+- 🎥 Live webcam demo with on-screen bounding boxes and stacked labels
+- 🧩 Modular design — detector, age/gender, and emotion are separate, swappable components
+- 🪶 Lightweight age/gender backbone (MobileNetV3-Small) — runs on CPU or GPU
 
 ---
 
@@ -55,13 +57,14 @@ Frame → YOLOv8x (face detection) → Crop face → Grayscale + Resize (224×22
 | Language | Python 3.10+ |
 | Deep Learning | PyTorch, torchvision |
 | Face Detection | Ultralytics YOLOv8x |
+| Emotion Recognition | EfficientNet-B0 (pretrained, [EmotiEffLib](https://github.com/sb-ai-lab/EmotiEffLib)) |
 | Image/Video I/O | OpenCV, Pillow |
 | Data Handling | pandas |
 | Training Utilities | tqdm |
 
 ---
 
-## 🏗️ Model Architecture
+## 🏗️ Age/Gender Model Architecture
 
 | Component | Detail |
 |---|---|
@@ -74,7 +77,9 @@ Frame → YOLOv8x (face detection) → Crop face → Grayscale + Resize (224×22
 
 **Age brackets:** `0-2` · `3-9` · `10-19` · `20-29` · `30-39` · `40-49` · `50-59` · `60-69` · `70+`
 
-### Validation Accuracy
+Emotion recognition uses a separate, pretrained EfficientNet-B0 model (not trained in this repo) that classifies 8 emotions directly from an RGB face crop resized to 224×224.
+
+### Validation Accuracy (Age/Gender model)
 
 | Task | Accuracy |
 |---|---|
@@ -97,80 +102,59 @@ pip install -r requirements.txt
 
 ### Get the model weights
 
-Download `best_model.pth` from the **[Releases page](https://github.com/ahmedayman2825/VisionIQ/releases)** and place it at:
+Download these from the **[Releases page](https://github.com/ahmedayman2825/VisionIQ/releases)** and place them in `models/` — see [`models/README.md`](models/README.md) for details:
 
 ```
-models/best_model.pth
-```
-
-You'll also need the YOLOv8x face detector weights at:
-
-```
-models/yolov8x_person_face.pt
+models/
+├── best_model.pth
+├── yolov8x_person_face.pt
+└── enet_b0_8_best_afew.pt
 ```
 
 ### Get the dataset (for training only)
 
-If you want to retrain the model, download **[FairFace from Kaggle](https://www.kaggle.com/datasets/aibloy/fairface)** and place it at:
-
-```
-dataset/FairFace/
-```
+If you want to retrain the age/gender model, download **[FairFace from Kaggle](https://www.kaggle.com/datasets/aibloy/fairface)** — see [`dataset/README.md`](dataset/README.md) for details.
 
 ---
 
 ## 🚀 Usage
 
-### Live webcam demo
+### Live webcam demo (age, gender, and emotion)
 
 ```bash
 cd src
-python test_cam.py
+python main.py
 ```
 
-Press **ESC** to quit. Each detected face is boxed with a `Gender | Age` label.
+Press **ESC** to quit. Each detected face is boxed, showing gender, age bracket, and predicted emotion with confidence.
 
-### Training from scratch
+### Training the age/gender model from scratch
 
 ```bash
 cd src
 python train.py
 ```
 
-### Using the model in your own code
+### Using the components in your own code
 
 ```python
-import torch
-from PIL import Image
-import torchvision.transforms as transforms
-from model import VisionIQ
+import cv2
+from detector import FaceDetector
+from age_gender import AgeGenderPredictor
+from emotion import EmotionPredictor
 
-AGE_CLASSES = ["0-2", "3-9", "10-19", "20-29", "30-39", "40-49", "50-59", "60-69", "70+"]
-GENDER_CLASSES = ["Male", "Female"]
+detector = FaceDetector()
+age_gender = AgeGenderPredictor()
+emotion = EmotionPredictor()
 
-device = "cuda" if torch.cuda.is_available() else "cpu"
+frame = cv2.imread("photo.jpg")
+faces = detector.detect(frame)
 
-model = VisionIQ().to(device)
-checkpoint = torch.load("models/best_model.pth", map_location=device)
-model.load_state_dict(checkpoint["model"])
-model.eval()
-
-transform = transforms.Compose([
-    transforms.Grayscale(),
-    transforms.Resize((224, 224)),
-    transforms.ToTensor(),
-    transforms.Normalize([0.5], [0.5]),
-])
-
-face = Image.open("face_crop.jpg")  # already-cropped face image
-tensor = transform(face).unsqueeze(0).to(device)
-
-with torch.no_grad():
-    outputs = model(tensor)
-    age = AGE_CLASSES[outputs["age"].argmax(1).item()]
-    gender = GENDER_CLASSES[outputs["gender"].argmax(1).item()]
-
-print(f"{gender}, {age}")
+for detected in faces:
+    face = detected["face"]
+    ag = age_gender.predict(face)
+    em = emotion.predict(face)
+    print(ag["gender"], ag["age"], em["emotion"], em["confidence"])
 ```
 
 ---
@@ -180,13 +164,15 @@ print(f"{gender}, {age}")
 ```
 VisionIQ/
 ├── src/
-│   ├── model.py               # VisionIQ architecture (backbone + age/gender heads)
+│   ├── model.py               # VisionIQ age/gender architecture (backbone + heads)
 │   ├── dataset.py             # FairFace Dataset class + transforms
 │   ├── fix_fairface_labels.py # Label preprocessing helper
-│   ├── train.py               # Training loop
-│   ├── test_cam.py            # Live webcam inference demo
-│   └── webcam.py
-├── models/                    # best_model.pth + yolov8x_person_face.pt (not tracked)
+│   ├── train.py               # Training loop (age/gender model)
+│   ├── detector.py            # FaceDetector — YOLOv8x face detection
+│   ├── age_gender.py          # AgeGenderPredictor — inference wrapper
+│   ├── emotion.py             # EmotionPredictor — emotion inference wrapper
+│   └── main.py                # Live webcam demo combining all three
+├── models/                    # best_model.pth, yolov8x_person_face.pt, enet_b0_8_best_afew.pt (not tracked)
 ├── dataset/                   # FairFace dataset (not tracked)
 ├── requirements.txt
 └── README.md
@@ -195,19 +181,19 @@ VisionIQ/
 ---
 
 ## 👤 Contributors
+
  **Ahmed Ayman**
 
 [![LinkedIn](https://img.shields.io/badge/LinkedIn-0077B5?style=flat-square&logo=linkedin&logoColor=white)](https://www.linkedin.com/in/eng-ahmed-ayman/)
 [![GitHub](https://img.shields.io/badge/GitHub-181717?style=flat-square&logo=github&logoColor=white)](https://github.com/ahmedayman2825)
-
-
 
 ---
 
 ## 🗺️ Future Improvements
 
 - [ ] Log training metrics to a file/CSV instead of console only
-- [ ] Export to ONNX for faster CPU inference
+- [ ] Export models to ONNX for faster CPU inference
 - [ ] Improve age accuracy with a stronger backbone or ordinal regression loss
+- [ ] Fine-tune the emotion model on more diverse, in-the-wild data
 - [ ] Add a batch image/video-file inference script (currently webcam-only)
 - [ ] Add a proper evaluation script with confusion matrices per class
