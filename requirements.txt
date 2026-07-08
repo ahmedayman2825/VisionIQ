@@ -6,3 +6,4 @@ pillow
 pandas
 numpy
 tqdm
+timm
